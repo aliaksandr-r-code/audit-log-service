@@ -1,0 +1,8 @@
+{
+  "aggregateId": "teams-message-1",
+  "action": "MESSAGE_CREATED",
+  "actor": "user-7",
+  "metadata": {
+    "channelId": "engineering"
+  }
+}
