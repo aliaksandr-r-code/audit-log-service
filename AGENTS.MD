@@ -4,11 +4,21 @@ Audit functionality events inside of company
 Example: Messages in teams
 Search, CRUD operations
 
+Functionality of REST API:
+  - create event
+  - search event by parameters
+  - archiving events 
+
+Domain model
+  Event:
+   - actor  
+   - action
+   - timestamp - calculated automatically when event is registered
+   
 ## Technology Stack: 
   - Java 21, 
   - Spring Boot 3.x, 
   - Postgres, 
-  - Kafka
   - Gradle
   - JPA (hibernate provider)
   - Spring Data JPA
@@ -17,29 +27,37 @@ Search, CRUD operations
 ## Invariants
 
 - Immutable Events
-- Code style with spottles
-- Make Sonar checks
-- Application is a Kafka Consumer
-- Application is not a Kafka Producer
+
 ## Architectural rules
 
 - Hexagonal architecture
-- Use Spring boot for port and adapters
+- Use Spring boot for adapters
 - Api could call business logic layer
 - Business logic is forbidden to call api layer 
 - Use CQRS
 - Integration test coverage 
 - Simplicity first
-- Persistence layer works with entity objects  
+- Persistence layer works with entity objects
+- Observability and healh checks
 
 ## Implementation rules
 
-- Spring Data repositories use only interfaces
-- Integration test should use TestContainers
-- Integration test should not use in-memory database
+- Integration tests should use TestContainers
+- Integration tests should not use in-memory database
 - In case when input and output data for tests contains more than two fields such test data should be stored in JSON resource files instead of test source code
 - Database in tests is Postgres
-- If some unclear leave as to do
+- Implement Repository in a declarative style and only as interface extending Spring Data JpaRepository
+- Repository should be annotated with Spring Repository annotation  
+- Any business Logic should be implemented as a services  
+- Transaction should be applicable only in a service layer 
+- Search should be implemented using Specifications
+- reasonable logging with slf4j 
+- If some unclear leave as to do 
+
+## Code style
+- Code style with spottles
+- Make Sonar checks
+
 
 ## Expected results
 

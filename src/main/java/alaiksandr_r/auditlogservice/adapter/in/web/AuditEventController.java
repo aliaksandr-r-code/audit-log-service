@@ -1,10 +1,10 @@
 package alaiksandr_r.auditlogservice.adapter.in.web;
 
+import alaiksandr_r.auditlogservice.application.service.AuditEventService;
+import alaiksandr_r.auditlogservice.application.service.RecordAuditEventCommand;
+import alaiksandr_r.auditlogservice.application.service.SearchAuditEventsQuery;
 import alaiksandr_r.auditlogservice.domain.model.AuditEvent;
-import alaiksandr_r.auditlogservice.domain.port.in.RecordAuditEventCommand;
-import alaiksandr_r.auditlogservice.domain.port.in.RecordAuditEventUseCase;
-import alaiksandr_r.auditlogservice.domain.port.in.SearchAuditEventsQuery;
-import alaiksandr_r.auditlogservice.domain.port.in.SearchAuditEventsUseCase;
+import alaiksandr_r.auditlogservice.domain.model.AuditEventNotFoundException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import java.net.URI;
@@ -13,7 +13,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -25,21 +27,17 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 @RequestMapping("/api/v1/audit-events")
 public class AuditEventController {
 
-  private final RecordAuditEventUseCase recordAuditEventUseCase;
-  private final SearchAuditEventsUseCase searchAuditEventsUseCase;
+  private final AuditEventService auditEventService;
 
-  public AuditEventController(
-      RecordAuditEventUseCase recordAuditEventUseCase,
-      SearchAuditEventsUseCase searchAuditEventsUseCase) {
-    this.recordAuditEventUseCase = recordAuditEventUseCase;
-    this.searchAuditEventsUseCase = searchAuditEventsUseCase;
+  public AuditEventController(AuditEventService auditEventService) {
+    this.auditEventService = auditEventService;
   }
 
   @PostMapping
   public ResponseEntity<AuditEventResponse> record(
       @Valid @RequestBody RecordAuditEventRequest request) {
     AuditEvent event =
-        recordAuditEventUseCase.record(
+        auditEventService.record(
             new RecordAuditEventCommand(
                 request.aggregateId(), request.action(), request.actor(), request.metadata()));
 
@@ -57,9 +55,21 @@ public class AuditEventController {
       @RequestParam(required = false) String aggregateId,
       @RequestParam(required = false) String action,
       @RequestParam(required = false) String actor) {
-    SearchAuditEventsQuery query = new SearchAuditEventsQuery(aggregateId, action, actor);
+    return auditEventService
+        .search(new SearchAuditEventsQuery(aggregateId, action, actor))
+        .stream()
+        .map(AuditEventResponse::from)
+        .toList();
+  }
 
-    return searchAuditEventsUseCase.search(query).stream().map(AuditEventResponse::from).toList();
+  @PostMapping("/{id}/archive")
+  public AuditEventResponse archive(@PathVariable UUID id) {
+    return AuditEventResponse.from(auditEventService.archive(id));
+  }
+
+  @ExceptionHandler(AuditEventNotFoundException.class)
+  public ResponseEntity<Void> handleNotFound() {
+    return ResponseEntity.notFound().build();
   }
 
   public record RecordAuditEventRequest(
@@ -74,7 +84,8 @@ public class AuditEventController {
       String action,
       String actor,
       Instant occurredAt,
-      Map<String, String> metadata) {
+      Map<String, String> metadata,
+      Instant archivedAt) {
 
     static AuditEventResponse from(AuditEvent event) {
       return new AuditEventResponse(
@@ -83,7 +94,8 @@ public class AuditEventController {
           event.action(),
           event.actor(),
           event.occurredAt(),
-          event.metadata());
+          event.metadata(),
+          event.archivedAt());
     }
   }
 }

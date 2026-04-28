@@ -1,4 +1,4 @@
-package alaiksandr_r.auditlogservice.domain.port.in;
+package alaiksandr_r.auditlogservice.application.service;
 
 import java.util.Map;
 

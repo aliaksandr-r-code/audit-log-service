@@ -1,3 +1,3 @@
-package alaiksandr_r.auditlogservice.domain.port.in;
+package alaiksandr_r.auditlogservice.application.service;
 
 public record SearchAuditEventsQuery(String aggregateId, String action, String actor) {}

@@ -11,14 +11,6 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
-  kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-    consumer:
-      group-id: ${KAFKA_CONSUMER_GROUP_ID:audit-log-service}
-
-audit:
-  kafka:
-    topic: audit.events
 
 management:
   endpoints:

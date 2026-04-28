@@ -11,7 +11,8 @@ public record AuditEvent(
     String action,
     String actor,
     Instant occurredAt,
-    Map<String, String> metadata) {
+    Map<String, String> metadata,
+    Instant archivedAt) {
 
   public AuditEvent {
     Objects.requireNonNull(id, "id must not be null");
