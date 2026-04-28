@@ -51,7 +51,8 @@ Domain model
 - Any business Logic should be implemented as a services  
 - Transaction should be applicable only in a service layer 
 - Search should be implemented using Specifications
-- reasonable logging with slf4j 
+- reasonable logging with slf4j
+- generate README.MD
 - If some unclear leave as to do 
 
 ## Code style
