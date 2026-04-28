@@ -55,9 +55,7 @@ public class AuditEventController {
       @RequestParam(required = false) String aggregateId,
       @RequestParam(required = false) String action,
       @RequestParam(required = false) String actor) {
-    return auditEventService
-        .search(new SearchAuditEventsQuery(aggregateId, action, actor))
-        .stream()
+    return auditEventService.search(new SearchAuditEventsQuery(aggregateId, action, actor)).stream()
         .map(AuditEventResponse::from)
         .toList();
   }
