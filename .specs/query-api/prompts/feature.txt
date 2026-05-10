@@ -1,0 +1,29 @@
+# Problem
+- We need REST API - read-only endpoint to query Events from audit-logs
+
+# Context
+- Using existing architecture.
+- Do not conflict with existing GET endpoints for filtering events
+
+# Constraints
+- Read-only API
+- p95 : 300ms at the 500 rows
+
+# Expected changes
+- New GET endpoint implementation
+- New Flyway scripts for creating indexes in db
+- Nothing Else
+
+# Verification method
+- Integration tests covering typical and edge-case are green
+
+# Integration with existing code
+- Follow existing architecture with adapters
+
+# Principles
+- Determinism first
+- Ask 5-7 questions when something is not clear
+
+
+
+
