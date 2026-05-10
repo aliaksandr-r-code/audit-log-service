@@ -40,6 +40,9 @@ Domain model
 - Persistence layer works with entity objects
 - Observability and healh checks
 
+## Requirements rules 
+- Requirements for feature should contain User Stories with Accepted Criteria
+
 ## Implementation rules
 
 - Integration tests should use TestContainers
