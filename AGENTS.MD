@@ -52,7 +52,14 @@ Domain model
 - When feature is REST API endpoint, design should contain API contract wit all possible statuses
 - Design should justify proposed solutions
 - Change of requirements during design is forbidden
-- Always ask up to 5-7 queries before generate design
+- Always ask up to 5-7 queries before generate 
+
+## Task decomposition rules
+- Each task should have an obligatory reference to design decision and optionally to requirement
+- Each task should contain definition of done
+- Between task should exist explicit dependencies
+- Each task can be implemented with single single-focused, observable and easy-reviewable commit 
+- Always ask up to 5-7 queries before task decomposition
 
 ## Implementation rules
 
