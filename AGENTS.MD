@@ -42,6 +42,8 @@ Domain model
 
 ## Requirements rules 
 - Requirements for feature should contain User Stories with Accepted Criteria
+- Always ask up to 5-7 queries before generate User Story and Acceptance Criteria
+
 
 ## Implementation rules
 
