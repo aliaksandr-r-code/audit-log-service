@@ -17,4 +17,4 @@ We need REST API - read-only endpoint to query Events from audit-logs
 
 # Open questions
  Not clear whether should be implemented as common code or separate classes
- ef
+ 
