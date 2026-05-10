@@ -11,11 +11,15 @@
 
 # Expected changes
 - New GET endpoint implementation
-- New Flyway scripts for creating indexes in db
+- New Flyway scripts for creating indexes in db for all filters
+- Deterministic sorting with tiebreaker
+
 - Nothing Else
 
 # Verification method
-- Integration tests covering typical and edge-case are green
+- Integration tests covering typical and edge-case (empty filters, max-ra) are green
+- Exact pagination solution
+
 
 # Integration with existing code
 - Follow existing architecture with adapters

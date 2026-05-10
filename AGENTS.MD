@@ -40,10 +40,19 @@ Domain model
 - Persistence layer works with entity objects
 - Observability and healh checks
 
-## Requirements rules 
+## Requirements rules
+
 - Requirements for feature should contain User Stories with Accepted Criteria
 - Always ask up to 5-7 queries before generate User Story and Acceptance Criteria
 
+## Design rules
+- Simplicity first
+- All designs decision should be explicit tightened with invariants and requirements.MD .
+- Follow all restrictions from feature description
+- When feature is REST API endpoint, design should contain API contract wit all possible statuses
+- Design should justify proposed solutions
+- Change of requirements during design is forbidden
+- Always ask up to 5-7 queries before generate design
 
 ## Implementation rules
 

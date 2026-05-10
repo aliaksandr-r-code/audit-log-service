@@ -28,7 +28,7 @@ QueryController     ───▶  AuditEventService.query  ──▶ AuditEventP
 ```
 
 - **Inbound adapter** translates HTTP into a domain query object and serializes the domain result back to JSON.
-- **Application service** owns the query semantics: validation, cursor encode/decode, the limit+1 fetch trick, and result assembly.
+- **Application service** owns the query semantics: validation, sort-direction binding, and result assembly.
 - **Outbound adapter** composes JPA Specifications and runs the query against Postgres.
 
 The existing `GET /api/v1/audit-events` (legacy list) and `POST /api/v1/audit-events` (record) are left unchanged. The new capability is exposed at a separate path so the legacy contract is not broken.
@@ -43,13 +43,11 @@ GET /api/v1/audit-events/query
 
 | Param           | Semantics                                                                              |
 |-----------------|----------------------------------------------------------------------------------------|
-| id              | repeatable — `?id=<uuid>&id=<uuid>` matches any of the given event ids (`IN`)          |
 | aggregateId     | exact match                                                                            |
-| action          | repeatable — `?action=CREATE&action=UPDATE` matches any of the given values (`IN`)     |
-| actor           | repeatable — `?actor=alice&actor=bob` matches any of the given values (`IN`)           |
+| action          | exact match                                                                            |
+| actor           | exact match                                                                            |
 | occurredFrom    | timestamp, inclusive lower bound (optional)                                            |
 | occurredTo      | timestamp, exclusive upper bound (optional)                                            |
-| metadata        | repeatable `key=value` pair — `?metadata=correlationId=abc&metadata=ip=10.0.0.1`; all pairs must match (AND) |
 
 All filters are AND-combined. Any subset may be omitted.
 
@@ -82,23 +80,7 @@ The response is wrapped:
 
 ### 3.3 Errors
 
-- `occurredFrom > occurredTo`, malformed `metadata` entry (no `=` separator, empty key, or empty value), `offset < 0`, `pageSize` out of range → `400`.
-- Caller is unauthenticated → `401`.
-- Caller is authenticated but holds none of the audit query roles → `403`.
-
-### 3.4 Authorization — per-role
-
-The endpoint enforces role-based access. The caller must hold at least one of three audit query roles, mapped to the three personas in the requirements:
-
-| Role               | Persona             |
-|--------------------|---------------------|
-| `AUDIT_COMPLIANCE` | Compliance officer  |
-| `AUDIT_SRE`        | SRE                 |
-| `AUDIT_SECURITY`   | Security analyst    |
-
-In v1, all three roles see the same filter surface and the same row set. The role distinction is therefore primarily an authorization gate (who can call the endpoint at all) rather than a data-subsetting mechanism. Future per-role data restrictions — e.g. SRE limited to a service's resources, compliance limited to a window — are deferred to a later iteration; the role model is shaped now so those restrictions can be added without breaking the contract.
-
-The roles are claims on the authenticated principal; how they are issued (JWT, OIDC, service-mesh-injected headers, etc.) is the auth platform's concern, not this design's.
+- `occurredFrom > occurredTo`, `offset < 0`, `pageSize` out of range → `400`.
 
 ## 4. Pagination model — offset + pageSize
 
@@ -121,15 +103,12 @@ This caveat is the principal trade-off of choosing offset over keyset pagination
 
 ### 5.1 Specifications
 
-The existing `AuditEventSpecifications` is extended with:
+The existing `AuditEventSpecifications` is reused; only the two time-bound specs are new:
 
-- `actionIn(Collection<String> actions)` — null when the collection is null or empty; otherwise `cb.in(root.get("action")).value(actions)`. The single-value case is a degenerate `IN` and behaves identically to today's equality.
-- `actorIn(Collection<String> actors)` — analogous to `actionIn`.
-- `occurredAtAtLeast(Instant from)` — `>=`.
-- `occurredAtBefore(Instant to)` — `<`.
-- `metadataContainsAll(Map<String, String> pairs)` — null when the map is null or empty; otherwise a single JSONB containment predicate `metadata @> '{...all pairs...}'`. Postgres evaluates the multi-key containment in one operation (single GIN index lookup), which is cheaper than ANDing N separate `@>` predicates.
-
-The existing `isNotArchived()` is always applied — archived rows are never returned by this endpoint.
+- The existing `hasAction(String)`, `hasActor(String)`, and `hasAggregateId(String)` are reused unchanged — each returns null when its argument is null, so omitted filters drop out of the composed predicate.
+- New: `occurredAtAtLeast(Instant from)` — null when `from` is null; otherwise `cb.greaterThanOrEqualTo(root.get("occurredAt"), from)`.
+- New: `occurredAtBefore(Instant to)` — null when `to` is null; otherwise `cb.lessThan(root.get("occurredAt"), to)`.
+- The existing `isNotArchived()` is always applied — archived rows are never returned by this endpoint.
 
 Offset pagination is realized via Spring Data's `PageRequest.of(offset/pageSize, pageSize, sort)`; no cursor predicate is needed. The repository's `findAll(Specification, Pageable)` produces both the page and the total count in a single round-trip.
 
@@ -141,16 +120,12 @@ CREATE INDEX idx_audit_events_occurred_at_id
 
 CREATE INDEX idx_audit_events_aggregate_occurred_at_id
     ON audit_events (aggregate_id, occurred_at, id);
-
-CREATE INDEX idx_audit_events_metadata_gin
-    ON audit_events USING GIN (metadata jsonb_path_ops);
 ```
 
 Rationale:
 
-- `(occurred_at, id)` — the keyset cursor's natural order; required for any deep pagination to avoid table scans.
+- `(occurred_at, id)` — the natural total-order pair; required for any deep pagination to avoid table scans.
 - `(aggregate_id, occurred_at, id)` — the SRE timeline shape (`aggregateId = X AND time range`, ordered by time). The leading equality predicate plus the range/order columns lets Postgres serve this query straight from the index.
-- GIN on `metadata` — required for the metadata containment filter to perform; without it, every metadata-filtered query is a sequential scan.
 
 The single-column indexes from V1 stay in place; they remain useful for the legacy list endpoint and ad-hoc queries.
 
@@ -161,14 +136,11 @@ The design fixes the following defaults. Each can be revisited; they are picked 
 | Choice                          | Default                                | Why                                                                                  |
 |---------------------------------|----------------------------------------|--------------------------------------------------------------------------------------|
 | Sort direction                  | descending by default; client flips with `sort=asc` | matches the dominant "latest events first" UX; SRE timelines flip to `asc`         |
-| Filter operators                | `IN` on `action`/`actor` (single value is the degenerate case) | one operator covers both equality and multi-value; URL is just repeated params      |
-| Metadata filter shape           | repeatable `metadata=key=value`, all pairs AND-combined | a single multi-key JSONB containment query — one GIN lookup, no N-way AND |
 | Default page size               | 50                                     | comfortable for browser/CLI inspection                                              |
 | Maximum page size               | 200                                    | balances large-export ergonomics against per-request memory and serialization cost  |
 | Archived events visibility      | always excluded (no opt-in)            | the query API exposes only the live audit log; archived rows are out of scope       |
-| Authorization                   | per-role; one of `AUDIT_COMPLIANCE` / `AUDIT_SRE` / `AUDIT_SECURITY` required | matches the three personas in the requirements; data-level subsetting deferred |
 
-If any of these is wrong for the actual users, change is local: filter operator and page size are controller-level; sort direction is one `Sort.by(...)` call; archived visibility would require lifting the `isNotArchived()` specification out of the always-applied path.
+If any of these is wrong for the actual users, change is local: page size is controller-level; sort direction is one `Sort.by(...)` call; archived visibility would require lifting the `isNotArchived()` specification out of the always-applied path.
 
 ## 7. Scale assumptions
 
@@ -178,21 +150,25 @@ If any of these is wrong for the actual users, change is local: filter operator 
 
 This shapes the query API in three ways:
 
-- **Indexes are not optional.** At ~36M rows, every filter the API exposes must be index-supported or the query will sequence-scan. The composite indexes in §5.2 are sized for that horizon — `(occurred_at, id)` for the default time-ordered scan, `(aggregate_id, occurred_at, id)` for the SRE timeline shape, and the GIN index for metadata containment.
+- **Indexes are not optional.** At ~36M rows, every filter the API exposes must be index-supported or the query will sequence-scan. The composite indexes in §5.2 are sized for that horizon — `(occurred_at, id)` for the default time-ordered scan and `(aggregate_id, occurred_at, id)` for the SRE timeline shape.
 - **Time-bounded queries are the norm.** Most legitimate uses (compliance windows, incident timelines) are bounded by `occurredFrom`/`occurredTo`. Unbounded queries against the full 5-year window are technically supported but expected to be rare; the design does not optimize for them.
 - **Offset pagination depth.** At 50 rows per page, walking the entire 36.5M-row table is ~730k requests — deep offsets get progressively slower under offset pagination because Postgres still has to skip every preceding row. In practice callers will be time-bounded (a one-day compliance window is ~20k rows, ~400 pages — fine). Deep paginations across the full retention horizon are not a supported workflow; if that need emerges, the keyset alternative in §8 is the answer.
 
 Partitioning the table monthly or quarterly on `occurred_at` is **not required** at this volume — 36M rows is comfortable for a single Postgres table with the indexes above — but becomes attractive once retention extends or the ingest rate grows. It is listed in §8 as deferred work and is transparent to the API contract when introduced.
 
+**Performance budget.** The endpoint targets **p95 ≤ 300 ms at a 500-row page** on the seeded integration dataset (sourced from `feature.txt`, codified by `requirements.MD` CR-4). The §5.2 composite indexes deliver this: the SRE timeline shape is served from `(aggregate_id, occurred_at, id)` as an index scan with no heap visits beyond the page; the time-ordered scan is served from `(occurred_at, id)`. Verification lives in `tasks.MD` T8 — an integration test seeds a representative dataset, runs N sequential warm requests against a 500-row page, and asserts p95 against the 300 ms bound; the build fails on regression.
+
 ## 8. Out of scope (deferred)
 
 Not addressed by this design — flagged so they are recognized as future work, not gaps:
 
-- **Full-text or JSON-path search inside metadata.** Multi-pair containment is enough for v1; substring or path-based matching is not exposed.
+- **Authentication / authorization gating.** v1 endpoint is open relative to existing endpoints; role gating is deferred. (Replaces the deleted §3.4.)
+- **Filtering by event `id`.** Single-event retrieval is covered elsewhere in the audit-events API.
+- **Filtering by `metadata`.** Containment, full-text, and JSON-path matching are all deferred.
+- **Anything beyond exact match on `aggregateId`/`action`/`actor` and the half-open time window.** Multi-value `IN`, `metadata` containment, full-text, JSON-path matching, and field-prefix search are all deferred.
 - **Ordering by fields other than `occurredAt`.** Direction toggle is in v1; alternative sort keys are not.
 - **Aggregations** (counts, group-by-action). This is a query API, not an analytics API.
 - **Bulk export** (CSV/NDJSON streaming) for very large windows. Pagination covers the up-to-tens-of-thousands case; true exports want a different transport.
-- **Per-role data filtering / field redaction.** Treated as an authorization concern handled outside this service.
 - **Client-supplied event timestamps.** `occurredAt` remains server-set.
 - **Keyset (cursor) pagination.** Available as a future swap-in if the offset trade-off documented in §4 proves too leaky under concurrent writes.
 - **Time-based table partitioning.** A storage-layer optimization that becomes attractive given the 5-year retention; transparent to the API contract.
@@ -201,4 +177,4 @@ Not addressed by this design — flagged so they are recognized as future work, 
 
 > *"Not clear whether should be implemented as common code or separate classes."*
 
-Resolved as: **separate endpoint, shared internals.** The new path `/audit-events/query` is its own controller method with its own request/response DTOs, so its contract is free to evolve. Underneath, it shares the `AuditEvent` domain record, the `AuditEventSpecifications` toolkit (extended, not duplicated), and the persistence adapter with the existing record/list/archive flows. Filter logic lives in one place; only the HTTP shape is endpoint-specific.
+Resolved as: **separate endpoint, shared internals.** The new path `/audit-events/query` is its own controller method with its own request/response DTOs, so its contract is free to evolve. Underneath, it shares the `AuditEvent` domain record, the `AuditEventSpecifications` toolkit (reused — only two new time-bound specs added, not duplicated), and the persistence adapter with the existing record/list/archive flows. Filter logic lives in one place; only the HTTP shape is endpoint-specific.
