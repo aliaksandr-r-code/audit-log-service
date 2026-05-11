@@ -56,6 +56,37 @@ public class AuditEventService {
         nullIfBlank(query.aggregateId()), nullIfBlank(query.action()), nullIfBlank(query.actor()));
   }
 
+  @Transactional(readOnly = true)
+  public QueryAuditEventsResult query(QueryAuditEventsQuery query) {
+    validate(query);
+    log.debug(
+        "Querying audit events: aggregateId={}, action={}, actor={}, occurredFrom={},"
+            + " occurredTo={}, sort={}, offset={}, pageSize={}",
+        query.aggregateId(),
+        query.action(),
+        query.actor(),
+        query.occurredFrom(),
+        query.occurredTo(),
+        query.sort(),
+        query.offset(),
+        query.pageSize());
+    return persistence.query(query);
+  }
+
+  private static void validate(QueryAuditEventsQuery query) {
+    if (query.occurredFrom() != null
+        && query.occurredTo() != null
+        && query.occurredFrom().isAfter(query.occurredTo())) {
+      throw new IllegalArgumentException("occurredFrom must be <= occurredTo");
+    }
+    if (query.offset() < 0) {
+      throw new IllegalArgumentException("offset must be >= 0");
+    }
+    if (query.pageSize() < 1 || query.pageSize() > 200) {
+      throw new IllegalArgumentException("pageSize must be in [1, 200]");
+    }
+  }
+
   @Transactional
   public AuditEvent archive(UUID id) {
     AuditEvent event =
