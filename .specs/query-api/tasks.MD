@@ -16,6 +16,7 @@ T3 ──┘
 
 Notes:
 - T9 (README) depends on T6; it can ship in parallel with T8 once T6 is merged.
+- The numbering jumps from T6 to T8 by intent: a planned T7 was folded into T8 during planning. Existing numbers are preserved so cross-references in design/requirements remain valid.
 
 ---
 
@@ -31,8 +32,8 @@ Add the indexes the query API relies on for index-only scans at the 36.5M-row ho
 
 ### Definition of Done
 - [ ] New file `src/main/resources/db/migration/V3__query_api_indexes.sql` exists with the two `CREATE INDEX` statements from design §5.2.
-- [ ] `./gradlew flywayMigrate` (or app boot) succeeds against a fresh Postgres.
-- [ ] An existing TestContainers-backed integration test still passes after migration (regression check that V3 does not break the legacy schema).
+- [ ] Application boot (Spring Boot's Flyway auto-migrate) succeeds against a fresh Postgres — verified by the existing TestContainers integration suite, which spins up a clean DB and runs all migrations on startup. (No Flyway Gradle plugin is configured in `build.gradle`; migrations run via `spring-boot-starter-data-jpa` + `flyway-core` on application start.)
+- [ ] The existing TestContainers-backed integration test (`AuditEventControllerIntegrationTest`) still passes after migration (regression check that V3 does not break the legacy schema).
 - [ ] `EXPLAIN` on `SELECT … WHERE aggregate_id = ? AND occurred_at >= ? AND occurred_at < ? ORDER BY occurred_at, id` reports `Index Scan using idx_audit_events_aggregate_occurred_at_id` (verified manually against a seeded local DB; not asserted in code).
 
 ---
@@ -83,13 +84,13 @@ Add the two JPA Specifications used by the query path that do not already exist.
 **Size**: 1 PR
 
 ### Description
-Add a single new method to `AuditEventPersistenceAdapter` that composes the Specifications, builds the Pageable from `(offset, pageSize, sort)`, runs `findAll(spec, pageable)`, and returns a `QueryAuditEventsResult` (mapping entities to domain).
+Add a single new method to `AuditEventPersistenceAdapter` that composes the Specifications, applies arbitrary-row offset pagination plus ordering, and returns a `QueryAuditEventsResult` (mapping entities to domain).
 
 ### Definition of Done
 - [ ] Method `query(QueryAuditEventsQuery): QueryAuditEventsResult` exists on `AuditEventPersistenceAdapter`.
 - [ ] Always applies `isNotArchived()`; always applies `Sort.by(direction, "occurredAt").and(Sort.by(direction, "id"))`.
-- [ ] `Pageable` is built as `PageRequest.of(offset / pageSize, pageSize, sort)`; if `offset` is not a multiple of `pageSize`, falls back to a manual offset/limit JPQL or `org.springframework.data.domain.OffsetScrollPosition` equivalent — chosen approach documented in a one-line code comment only if non-obvious.
-- [ ] Returns `totalCount` from `Page.getTotalElements()`.
+- [ ] Pagination uses **arbitrary row offset** (not page-number arithmetic): `PageRequest.of(offset / pageSize, pageSize, sort)` is NOT acceptable because `PageRequest` takes a page number — `offset=75, pageSize=50` would resolve to rows 50–99 instead of 75–124. Use one of: (a) a custom `Pageable` that overrides `getOffset()` to return the raw offset and `getPageNumber()` to return `offset / pageSize`, paired with `findAll(spec, pageable)`; (b) `EntityManager` with `setFirstResult(offset)` / `setMaxResults(pageSize)` + a separate `repository.count(spec)` call. Chosen approach noted in a one-line code comment only if non-obvious.
+- [ ] Returns `totalCount` matching the snapshot of rows the filters select (from `Page.getTotalElements()` or an explicit `count(spec)` call, depending on chosen approach).
 - [ ] Existing legacy `search(...)` method is unchanged; its tests still pass.
 - [ ] Integration test (`@Tag("integration")`, TestContainers) seeds ~30 events and exercises: filter by `aggregateId`, time-range filter, descending vs ascending sort, deterministic tie-break on identical `occurredAt`, archived rows excluded.
 - [ ] Test fixtures with >2 fields live in `src/test/resources/query-api/` per project rule.
