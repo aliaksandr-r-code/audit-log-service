@@ -1,8 +1,11 @@
 package alaiksandr_r.auditlogservice.adapter.in.web;
 
 import alaiksandr_r.auditlogservice.application.service.AuditEventService;
+import alaiksandr_r.auditlogservice.application.service.QueryAuditEventsQuery;
+import alaiksandr_r.auditlogservice.application.service.QueryAuditEventsResult;
 import alaiksandr_r.auditlogservice.application.service.RecordAuditEventCommand;
 import alaiksandr_r.auditlogservice.application.service.SearchAuditEventsQuery;
+import alaiksandr_r.auditlogservice.application.service.SortDirection;
 import alaiksandr_r.auditlogservice.domain.model.AuditEvent;
 import alaiksandr_r.auditlogservice.domain.model.AuditEventNotFoundException;
 import jakarta.validation.Valid;
@@ -12,6 +15,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -65,9 +69,38 @@ public class AuditEventController {
     return AuditEventResponse.from(auditEventService.archive(id));
   }
 
+  @GetMapping("/query")
+  public QueryResponse query(
+      @RequestParam(required = false) String aggregateId,
+      @RequestParam(required = false) String action,
+      @RequestParam(required = false) String actor,
+      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+          Instant occurredFrom,
+      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+          Instant occurredTo,
+      @RequestParam(defaultValue = "0") int offset,
+      @RequestParam(defaultValue = "50") int pageSize,
+      @RequestParam(defaultValue = "desc") String sort) {
+    SortDirection direction = "asc".equalsIgnoreCase(sort) ? SortDirection.ASC : SortDirection.DESC;
+    QueryAuditEventsResult result =
+        auditEventService.query(
+            new QueryAuditEventsQuery(
+                aggregateId, action, actor, occurredFrom, occurredTo, direction, offset, pageSize));
+    return new QueryResponse(
+        result.items().stream().map(AuditEventResponse::from).toList(),
+        result.offset(),
+        result.pageSize(),
+        result.totalCount());
+  }
+
   @ExceptionHandler(AuditEventNotFoundException.class)
   public ResponseEntity<Void> handleNotFound() {
     return ResponseEntity.notFound().build();
+  }
+
+  @ExceptionHandler(IllegalArgumentException.class)
+  public ResponseEntity<Map<String, String>> handleBadRequest(IllegalArgumentException e) {
+    return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
   }
 
   public record RecordAuditEventRequest(
@@ -96,4 +129,7 @@ public class AuditEventController {
           event.archivedAt());
     }
   }
+
+  public record QueryResponse(
+      List<AuditEventResponse> items, int offset, int pageSize, long totalCount) {}
 }
