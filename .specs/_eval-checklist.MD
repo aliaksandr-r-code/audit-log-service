@@ -1,4 +1,4 @@
 - Each AC is testable
 - Tasks has refs and DoD
 - Pagination strategy is justified
-- Dependencies between tasks are explicit 
+- Dependencies between tasks are explicwit 
