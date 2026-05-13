@@ -1,0 +1,5 @@
+hooks = "D:/Java_Projects/audit-log-service/.codex/hooks/hooks.json"
+
+[features]
+codex_hooks = true
+hooks = true

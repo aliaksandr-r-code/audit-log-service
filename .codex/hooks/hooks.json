@@ -1,0 +1,27 @@
+{
+  "description": "Stop-time spec self-eval gate for feature specs.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"D:/Java_Projects/audit-log-service/.codex/hooks/spec-self-eval-stop.ps1\" snapshot",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"D:/Java_Projects/audit-log-service/.codex/hooks/spec-self-eval-stop.ps1\"",
+            "timeout": 900
+          }
+        ]
+      }
+    ]
+  }
+}

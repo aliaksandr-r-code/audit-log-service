@@ -61,6 +61,7 @@ Introduce the application-layer types the service will operate on: a query recor
 ## T3 — Extend `AuditEventSpecifications` with two time-bound predicates
 
 **Refs**: design §5.1
+**Requirements**: requirements.MD CR-1 (filter surface — time-bound predicates)
 **Depends on**: —
 **Size**: 1 PR
 

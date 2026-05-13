@@ -1,0 +1,16 @@
+﻿{
+    "createdAt":  "2026-05-13T15:13:50.3431079Z",
+    "files":  {
+                  ".specs/query-api/plans/create-plan-for-specs-query-api-md-federated-lightning-3.md":  "D41ED7B0533A65F8B65734488A33A6C9B8F3108CC1774D0544F1E4EB1B39B26C",
+                  ".specs/query-api/plans/create-plan-for-specs-query-api-md-federated-lightning-4.md":  "210F5928E587E4D762280601CFBFAF23DA26087223917D0943C9086720BFE952",
+                  ".specs/query-api/requirements.MD":  "B79C0C8E5BEDBE8B442B028B2AACE0BC65CAAF383E57F737F05CB264C3DA5541",
+                  ".specs/query-api/plans/create-plan-for-specs-query-api-md-federated-lightning-1.md":  "E3EF493059A2E8598AC200E4D14CE50124B126395C6D39AC6C1CDECB8BFBD500",
+                  ".specs/query-api/tasks.MD":  "026A244B280867AC986B32AA499FB6F54FD91CC7485266A5C87627D7F4B45D50",
+                  ".specs/query-api/plans/_delta-create-plan-for-specs-query-api-md-federated-lightning-4.md":  "8D1835AF0D91376594C8EBD3E1DE558CBC1D5BE9649F2AAA1346618EA0153F23",
+                  ".specs/query-api/prompts/feature.txt":  "A0C756490566D6A88005E18D0EE5FF5FEC55B707A864037C8C500D01C7179E86",
+                  ".specs/query-api/plans/create-plan-for-tasks-md-mutable-wreath-1.md":  "F67F19FE5BE004E7599E03CB45A09E22E7D9A26AE7A13E576040FE1CC6CDE10C",
+                  ".specs/query-api/plans/create-plan-for-specs-query-api-md-federated-lightning-2.md":  "4B05074BFA08B39292E90C7B57F1DCF7D7C437DA856C49A5E621B99247F91A3C",
+                  ".specs/query-api/design.MD":  "707C67553B8E9A15A657045943C85B456E0BA7C0D292FDBC02C66CDF6D51CFD0",
+                  ".specs/query-api/prompts/eval-checklist.txt":  "3F62AE4B6FB5F20CB13F76CAA1988AC5E9BE3140550A6CBD65608057076BA806"
+              }
+}
