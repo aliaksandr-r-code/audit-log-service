@@ -1,0 +1,14 @@
+{
+  "Stop": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "C:\\Users\\aliaksandr\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe \"$(git rev-parse --show-toplevel)\\.codex\\hooks\\spec_self_eval_stop.py\"",
+          "timeout": 900,
+          "statusMessage": "Running spec-self-eval for touched specs"
+        }
+      ]
+    }
+  ]
+}

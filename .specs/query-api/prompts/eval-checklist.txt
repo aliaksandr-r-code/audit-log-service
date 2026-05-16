@@ -1,0 +1,2 @@
+Walk this checklist against my .specs/query-api/. For each item, emit PASS / FAIL / WEAK with one-line evidence.
+save results in .specs/query-api/eval-report-<date>.md
