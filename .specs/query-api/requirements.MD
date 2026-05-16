@@ -86,9 +86,6 @@ The endpoint accepts the following optional filters, AND-combined:
 
 - `aggregateId` — exact match.
 - `action` — exact match.
-- `actor` — exact match; or a comma-separated list (e.g.
-  `?actor=a1,a2,a3`) — listed values are OR-combined within the
-  filter, then AND-combined with the other filters.
 - `occurredFrom` — timestamp, inclusive lower bound.
 - `occurredTo` — timestamp, exclusive upper bound.
 
