@@ -28,7 +28,8 @@ QueryController     ───▶  AuditEventService.query  ──▶ AuditEventP
 ```
 
 - **Inbound adapter** translates HTTP into a domain query object and serializes the domain result back to JSON.
-- **Application service** owns the query semantics: validation, sort-direction binding, and result assembly.
+- **Application service** owns the query semantics: validation, actor-list
+  normalization, sort-direction binding, and result assembly.
 - **Outbound adapter** composes JPA Specifications and runs the query against Postgres.
 
 The existing `GET /api/v1/audit-events` (legacy list) and `POST /api/v1/audit-events` (record) are left unchanged. The new capability is exposed at a separate path so the legacy contract is not broken.
@@ -45,11 +46,15 @@ GET /api/v1/audit-events/query
 |-----------------|----------------------------------------------------------------------------------------|
 | aggregateId     | exact match                                                                            |
 | action          | exact match                                                                            |
-| actor           | exact match                                                                            |
+| actor           | comma-separated actor list; trim values, de-duplicate, max 10 distinct actors, case-insensitive exact match |
 | occurredFrom    | timestamp, inclusive lower bound (optional)                                            |
 | occurredTo      | timestamp, exclusive upper bound (optional)                                            |
 
-All filters are AND-combined. Any subset may be omitted.
+All filters are AND-combined. Any subset may be omitted. Multiple values inside
+`actor` are OR-combined before the actor filter is AND-combined with the rest
+of the filters. For example, `actor=a1, a2, a3` matches events whose actor is
+`a1`, `a2`, or `a3`, ignoring surrounding whitespace and actor-case
+differences. Empty actor tokens such as `actor=a1,,a3` are invalid.
 
 The time window uses the half-open convention `[from, to)` so adjacent windows tile cleanly without overlap or gap.
 
@@ -78,9 +83,17 @@ The response is wrapped:
 
 `totalCount` is included so callers can compute the last reachable page without a probe request. It is a snapshot taken at query time and may shift under concurrent writes.
 
-### 3.3 Errors
+### 3.3 Statuses and errors
 
-- `occurredFrom > occurredTo`, `offset < 0`, `pageSize` out of range → `400`.
+- Success -> `200`.
+- `occurredFrom > occurredTo`, `offset < 0`, `pageSize` out of range,
+  `actor` with an empty token, or `actor` with more than 10 distinct values
+  after de-duplication -> `400`.
+
+Validation failures return a small problem JSON whose message names the
+offending field. Other framework-level statuses, such as `404` for unrelated
+paths or `405` for unsupported methods, remain the default Spring behavior and
+are not part of this endpoint's business contract.
 
 ## 4. Pagination model — offset + pageSize
 
@@ -103,16 +116,42 @@ This caveat is the principal trade-off of choosing offset over keyset pagination
 
 ### 5.1 Specifications
 
-The existing `AuditEventSpecifications` is reused; only the two time-bound specs are new:
+The existing `AuditEventSpecifications` is reused and extended for the query
+shape:
 
-- The existing `hasAction(String)`, `hasActor(String)`, and `hasAggregateId(String)` are reused unchanged — each returns null when its argument is null, so omitted filters drop out of the composed predicate.
+- Existing `hasAction(String)` and `hasAggregateId(String)` are reused
+  unchanged; each returns null when its argument is null, so omitted filters
+  drop out of the composed predicate.
+- Replace the query path's actor predicate with
+  `hasAnyActorIgnoreCase(Collection<String> actors)`. It returns null when the
+  normalized collection is empty; otherwise it compares
+  `lower(root.get("actor"))` with the lower-cased actor values using an `IN`
+  predicate. This implements requirements.MD AC-1.1a, AC-1.1b, AC-3.6, and
+  CR-1 without leaking HTTP comma parsing into the persistence adapter.
 - New: `occurredAtAtLeast(Instant from)` — null when `from` is null; otherwise `cb.greaterThanOrEqualTo(root.get("occurredAt"), from)`.
 - New: `occurredAtBefore(Instant to)` — null when `to` is null; otherwise `cb.lessThan(root.get("occurredAt"), to)`.
 - The existing `isNotArchived()` is always applied — archived rows are never returned by this endpoint.
 
-Offset pagination is realized via Spring Data's `PageRequest.of(offset/pageSize, pageSize, sort)`; no cursor predicate is needed. The repository's `findAll(Specification, Pageable)` produces both the page and the total count in a single round-trip.
+Offset pagination uses the caller's raw row offset, not Spring Data page-number
+arithmetic. `PageRequest.of(offset / pageSize, pageSize, sort)` is not valid
+for this contract because `offset=75&pageSize=50` would fetch rows 50-99
+instead of rows 75-124. The persistence adapter must either use a small custom
+`Pageable` whose `getOffset()` returns the raw offset with
+`findAll(specification, pageable)`, or use `EntityManager` with
+`setFirstResult(offset)` / `setMaxResults(pageSize)` plus a separate
+`count(specification)` call. Both options preserve the v1 offset contract; the
+implementation should keep whichever approach is already used by the completed
+query tasks.
 
-### 5.2 Indexing (Flyway V3)
+Actor normalization is an application-service responsibility, not controller
+binding. The controller passes the raw optional `actor` string into the
+application query object. The service splits on comma, trims surrounding
+whitespace, rejects empty tokens, lower-cases values with `Locale.ROOT`,
+de-duplicates while preserving deterministic order, enforces the maximum of 10
+distinct actors, and passes the normalized collection to the persistence
+adapter.
+
+### 5.2 Indexing (Flyway V3 and V4)
 
 ```sql
 CREATE INDEX idx_audit_events_occurred_at_id
@@ -122,10 +161,23 @@ CREATE INDEX idx_audit_events_aggregate_occurred_at_id
     ON audit_events (aggregate_id, occurred_at, id);
 ```
 
+```sql
+-- V4__query_api_actor_lower_occurred_at_id_index.sql
+CREATE INDEX idx_audit_events_lower_actor_occurred_at_id
+    ON audit_events (lower(actor), occurred_at, id);
+```
+
 Rationale:
 
 - `(occurred_at, id)` — the natural total-order pair; required for any deep pagination to avoid table scans.
 - `(aggregate_id, occurred_at, id)` — the SRE timeline shape (`aggregateId = X AND time range`, ordered by time). The leading equality predicate plus the range/order columns lets Postgres serve this query straight from the index.
+
+- `(lower(actor), occurred_at, id)` - the compliance and security-analyst
+  actor-list shape. The query compares `lower(actor)` against up to 10
+  normalized actor values and orders by `(occurred_at, id)`, so an expression
+  composite index avoids a sequential scan while preserving deterministic
+  pagination order. This index is required because the existing single-column
+  actor index cannot support case-insensitive `lower(actor)` predicates.
 
 The single-column indexes from V1 stay in place; they remain useful for the legacy list endpoint and ad-hoc queries.
 
@@ -156,7 +208,24 @@ This shapes the query API in three ways:
 
 Partitioning the table monthly or quarterly on `occurred_at` is **not required** at this volume — 36M rows is comfortable for a single Postgres table with the indexes above — but becomes attractive once retention extends or the ingest rate grows. It is listed in §8 as deferred work and is transparent to the API contract when introduced.
 
-**Performance budget.** The endpoint targets **p95 ≤ 300 ms at a 500-row page** on the seeded integration dataset (sourced from `feature.txt`, codified by `requirements.MD` CR-4). The §5.2 composite indexes deliver this: the SRE timeline shape is served from `(aggregate_id, occurred_at, id)` as an index scan with no heap visits beyond the page; the time-ordered scan is served from `(occurred_at, id)`. Verification lives in `tasks.MD` T8 — an integration test seeds a representative dataset, runs N sequential warm requests against a 500-row page, and asserts p95 against the 300 ms bound; the build fails on regression.
+**Performance budget.** The public API still caps `pageSize` at `200`, but the
+legacy CR-4 benchmark is retained as a stricter internal stress budget:
+**p95 ≤ 300 ms at a 500-row read** on the seeded integration dataset. The
+500-row benchmark is not a public request contract; it is an internal
+service/persistence performance check used to prove the query plan has headroom
+above the public cap. Public endpoint verification uses the maximum 200-row
+page, while the CR-4 benchmark may exercise the same query path below the
+controller validation layer. The §5.2 composite indexes deliver both budgets:
+the SRE timeline shape is served from `(aggregate_id, occurred_at, id)` as an
+index scan with no heap visits beyond the page; the time-ordered scan is served
+from `(occurred_at, id)`; and the multi-actor shape is served from
+`(lower(actor), occurred_at, id)`. Verification lives in `tasks.MD` T8/T14 —
+integration tests seed a representative dataset, run N sequential warm requests
+against the public 200-row page and the internal 500-row benchmark as
+applicable, and assert p95 against the 300 ms bound; the build fails on
+regression. Because T8 is an already-implemented historical baseline task, its
+"500-row page" wording is interpreted as this internal stress benchmark below
+controller validation, not as a public endpoint request with `pageSize=500`.
 
 ## 8. Out of scope (deferred)
 
@@ -165,7 +234,10 @@ Not addressed by this design — flagged so they are recognized as future work, 
 - **Authentication / authorization gating.** v1 endpoint is open relative to existing endpoints; role gating is deferred. (Replaces the deleted §3.4.)
 - **Filtering by event `id`.** Single-event retrieval is covered elsewhere in the audit-events API.
 - **Filtering by `metadata`.** Containment, full-text, and JSON-path matching are all deferred.
-- **Anything beyond exact match on `aggregateId`/`action`/`actor` and the half-open time window.** Multi-value `IN`, `metadata` containment, full-text, JSON-path matching, and field-prefix search are all deferred.
+- **Anything beyond exact match on `aggregateId`/`action`, the supported
+  case-insensitive multi-value `actor` filter, and the half-open time window.**
+  Multi-value filters for fields other than `actor`, metadata containment,
+  full-text, JSON-path matching, and field-prefix search are all deferred.
 - **Ordering by fields other than `occurredAt`.** Direction toggle is in v1; alternative sort keys are not.
 - **Aggregations** (counts, group-by-action). This is a query API, not an analytics API.
 - **Bulk export** (CSV/NDJSON streaming) for very large windows. Pagination covers the up-to-tens-of-thousands case; true exports want a different transport.
@@ -177,4 +249,4 @@ Not addressed by this design — flagged so they are recognized as future work, 
 
 > *"Not clear whether should be implemented as common code or separate classes."*
 
-Resolved as: **separate endpoint, shared internals.** The new path `/audit-events/query` is its own controller method with its own request/response DTOs, so its contract is free to evolve. Underneath, it shares the `AuditEvent` domain record, the `AuditEventSpecifications` toolkit (reused — only two new time-bound specs added, not duplicated), and the persistence adapter with the existing record/list/archive flows. Filter logic lives in one place; only the HTTP shape is endpoint-specific.
+Resolved as: **separate endpoint, shared internals.** The new path `/audit-events/query` is its own controller method with its own request/response DTOs, so its contract is free to evolve. Underneath, it shares the `AuditEvent` domain record, the `AuditEventSpecifications` toolkit (reused and extended with time-bound predicates plus the case-insensitive multi-actor predicate), and the persistence adapter with the existing record/list/archive flows. Filter logic lives in one place; only the HTTP shape is endpoint-specific.

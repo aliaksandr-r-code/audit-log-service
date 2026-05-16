@@ -1,0 +1,30 @@
+# Problem
+We need to extend a feature query-api to support the following behavior:
+- Query parameter actor accepts a comma-separated list (?actor=a1, a2, a3)
+- Maximum 10 actors per request
+- An index plan: either a new composite index or expplicit reasoning that the exsiting one is enough
+- Featrue shoyld implemented only for US-1 — Compliance officer an US-3 — Security analyst - the corresponfing acceptance criteria should be xtended
+
+# Context
+- Using existing architecture.
+
+# Constraints
+- use already applied constrains for the feature
+
+# Expected changes
+- extend existing query-api endpoint
+- new code and tests that covers changed requirements
+- new Flyway scripts if only necessary
+- nothing else
+
+# Verification method
+- New integration tests covering new requirements are green
+
+# Integration with existing code
+- Follow existing architecture with adapters
+
+# Principles
+- Determinism first
+- Ask 5-7 questions when something is not clear
+
+

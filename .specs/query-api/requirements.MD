@@ -22,6 +22,14 @@ richer.
   window (`occurredFrom` inclusive, `occurredTo` exclusive), and an
   `action`, the response contains every matching live event and no
   others.
+- AC-1.1a Given the API is called with `actor` as a comma-separated
+  list, for example `actor=a1, a2, a3`, the response contains events
+  whose actor exactly matches any listed actor after trimming
+  surrounding whitespace and applying case-insensitive comparison.
+- AC-1.1b Given the comma-separated `actor` list contains duplicate
+  actor values after trimming and case normalization, the API
+  de-duplicates them before querying and returns the same result as if
+  each actor appeared once.
 - AC-1.2 Each returned event includes its identifier, actor, action,
   server-assigned timestamp (`occurredAt`), aggregate id, and metadata
   — the same fields the record endpoint accepts.
@@ -78,6 +86,12 @@ duplication.
   documentation so callers can choose the mitigation knowingly. (See
   Out of scope — cursor pagination.)
 
+- AC-3.6 Given the caller paginates with an `actor` comma-separated
+  list containing up to 10 distinct actors after de-duplication, the
+  `offset`, `pageSize`, `totalCount`, and deterministic ordering rules
+  apply to the OR-combined actor filter exactly as they apply to
+  single-actor and non-actor filters.
+
 # Cross-cutting requirements
 
 ## CR-1 — Filter surface
@@ -86,7 +100,12 @@ The endpoint accepts the following optional filters, AND-combined:
 
 - `aggregateId` — exact match.
 - `action` — exact match.
-- `actor` — exact match
+- `actor` — comma-separated list of actor values. Values are trimmed,
+  empty values are rejected, duplicates are de-duplicated, and matching
+  is exact per value but case-insensitive. The list may contain at most
+  10 distinct actors after de-duplication. Multiple actor values are
+  OR-combined inside the actor filter; the actor filter remains
+  AND-combined with every other filter.
 - `occurredFrom` — timestamp, inclusive lower bound.
 - `occurredTo` — timestamp, exclusive upper bound.
 
@@ -109,22 +128,34 @@ Metadata-based filtering is **out of scope** for v1.
 
 ## CR-3 — Validation and errors
 
-- CR-3.1 `occurredFrom > occurredTo`, `offset < 0`, or `pageSize`
-  outside `[1, 200]` → HTTP 400 with a message naming the offending
-  field.
+- CR-3.1 `occurredFrom > occurredTo`, `offset < 0`, `pageSize`
+  outside `[1, 200]`, an `actor` list containing more than 10 distinct
+  values after de-duplication, or an `actor` list containing an empty
+  value → HTTP 400 with a message naming the offending field.
 - CR-3.2 The endpoint is idempotent and side-effect-free; repeated
   identical requests return the same response (modulo concurrent
   writes).
 
 ## CR-4 — Performance (NFR, verifiable)
 
-- CR-4.1 At a 500-row page the endpoint serves p95 latency
-  ≤ 300 ms on the integration-test seeded dataset, measured warm
-  over N sequential identical requests.
+- CR-4.1 The public endpoint serves p95 latency ≤ 300 ms at the
+  public maximum 200-row page on the integration-test seeded dataset,
+  measured warm over N sequential identical requests. A separate
+  internal stress benchmark exercises the same query path below
+  controller validation at a 500-row read and must meet the same p95
+  bound; the 500-row benchmark is not a public API request contract.
 - CR-4.2 The performance target is verified by an integration test
   (TestContainers Postgres) that seeds a representative dataset,
-  runs N sequential queries against a 500-row page, and asserts p95
-  against the bound. Failure of the assertion fails the build.
+  runs N sequential queries against both the public 200-row page and
+  the internal 500-row stress read, and asserts p95 against the bound.
+  Failure of either assertion fails the build. Any existing task or
+  test-plan wording that says "500-row page" refers to this internal
+  stress read below public controller validation, not to an allowed
+  public `pageSize`.
+- CR-4.3 The design must include an explicit index plan for the
+  multi-actor query path: either a new composite index or a documented
+  justification that the existing index strategy is sufficient for the
+  case-insensitive OR-combined actor filter with pagination.
 
 ## CR-5 — Observability
 
