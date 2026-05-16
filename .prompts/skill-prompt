@@ -1,0 +1,3 @@
+Create a skill spec-self-eval under<repo>/.codex/skills/spec-self-eval/, mirror to <repo>/.claude/skills/spec-self-eval/.
+1It reads /.specs/_eval-checklist.MD and validates: .specs/<feature>/{requirements,design,tasks}.MD, emits a PASS / FAIL / WEAK report, and saves it to.specs/<feature>/eval-report-<date>.md. Use the checklist already at .specs/_eval-checklist.md if present.
+Also evaluate that specs are clear and with correct level of details
